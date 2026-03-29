@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="PicSave">
+    <link rel="manifest" href="manifest.json">
+    <title>PicSave</title>
+    <style>
+        :root {
+            --bg: #000000;
+            --glass: rgba(255,255,255,0.07);
+            --glass-border: rgba(255,255,255,0.10);
+            --text: #ffffff;
+            --text-secondary: rgba(255,255,255,0.55);
+            --danger: #FF3B30;
+            --success: #30D158;
+            --radius-xl: 36px;
+            --radius-lg: 22px;
+            --radius-pill: 50px;
+            --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+            --ease: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            --sat: env(safe-area-inset-top);
+            --sab: env(safe-area-inset-bottom);
+        }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
+        body, html {
+            width: 100%; height: 100%;
+            background: var(--bg); color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+            overflow: hidden;
+        }
+
+        #viewfinder {
+            position: fixed; inset: 0;
+            width: 100%; height: 100%;
+            object-fit: cover; background: #000; z-index: 0;
+        }
+
+        /* ── DYNAMIC ISLAND ── */
+        #dynamic-island {
+            position: fixed;
+            top: calc(var(--sat) + 12px);
+            left: 50%; transform: translateX(-50%);
+            z-index: 100;
+            background: #000;
+            border-radius: var(--radius-pill);
+            display: flex; align-items: center; justify-content: center;
+            gap: 8px; padding: 0 16px;
+            height: 36px; width: 126px;
+            transition: width 0.45s var(--spring), height 0.45s var(--spring),
+                        border-radius 0.45s var(--spring), box-shadow 0.35s var(--ease);
+            overflow: hidden; cursor: pointer;
+            box-shadow: 0 0 0 1px rgba(255,255,255,0.06);
+        }
+        #dynamic-island.expanded-wide { width: 260px; height: 44px; }
+        #dynamic-island.expanded-tall { width: 240px; height: 80px; border-radius: 26px; }
+        #dynamic-island.glow-green { box-shadow: 0 0 0 1px rgba(48,209,88,0.4), 0 0 20px rgba(48,209,88,0.25); }
+        #dynamic-island.glow-red   { box-shadow: 0 0 0 1px rgba(255,59,48,0.4),  0 0 20px rgba(255,59,48,0.25); }
+
+        #island-content {
+            display: flex; align-items: center; justify-content: center;
+            gap: 8px; white-space: nowrap;
+            font-size: 13px; font-weight: 600; letter-spacing: -0.2px;
+            transition: opacity 0.2s var(--ease); width: 100%;
+        }
+        #island-left  { font-size: 15px; }
+        #island-right { font-size: 12px; opacity: 0.75; }
+
+        .island-dots { display: flex; gap: 4px; align-items: center; }
+        .island-dot  {
+            width: 6px; height: 6px; border-radius: 50%; background: white;
+            animation: dot-pulse 1.2s ease-in-out infinite;
+        }
+        .island-dot:nth-child(2) { animation-delay: 0.2s; }
+        .island-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes dot-pulse {
+            0%,100% { opacity: 0.3; transform: scale(0.8); }
+            50%     { opacity: 1;   transform: scale(1.2); }
+        }
+
+        /* ── DOCK ── */
+        #dock {
+            position: fixed;
+            bottom: calc(var(--sab) + 24px);
+            left: 50%; transform: translateX(-50%);
+            z-index: 100;
+            background: rgba(0,0,0,0.55);
+            backdrop-filter: blur(30px) saturate(180%);
+            -webkit-backdrop-filter: blur(30px) saturate(180%);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius-pill);
+            padding: 12px 24px;
+            display: flex; align-items: center; gap: 28px;
+            width: calc(100% - 40px); max-width: 380px;
+        }
+
+        #last-thumb {
+            width: 54px; height: 54px; border-radius: 14px;
+            background: rgba(255,255,255,0.08);
+            border: 1.5px solid var(--glass-border);
+            background-size: cover; background-position: center;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 22px; cursor: pointer; flex-shrink: 0;
+            transition: transform 0.4s var(--spring);
+        }
+        #last-thumb:active { transform: scale(0.92); }
+
+        #shutter {
+            width: 72px; height: 72px; border-radius: 50%;
+            border: 3px solid white; background: transparent;
+            display: flex; align-items: center; justify-content: center;
+            padding: 5px; cursor: pointer; flex-shrink: 0;
+            transition: transform 0.15s var(--spring);
+            margin: 0 auto;
+        }
+        #shutter-inner {
+            width: 100%; height: 100%; border-radius: 50%; background: white;
+            transition: transform 0.15s var(--spring);
+        }
+        #shutter:active #shutter-inner { transform: scale(0.84); }
+
+        #flip-btn {
+            width: 54px; height: 54px; border-radius: 50%;
+            background: rgba(255,255,255,0.08);
+            border: 1.5px solid var(--glass-border);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 22px; cursor: pointer; flex-shrink: 0;
+            transition: transform 0.5s var(--spring);
+        }
+        #flip-btn:active { transform: rotate(180deg) scale(0.9); }
+
+        /* ── FLASH ── */
+        #flash {
+            position: fixed; inset: 0; background: white;
+            opacity: 0; pointer-events: none; z-index: 99;
+        }
+        @keyframes flash-anim { 0%{opacity:0} 40%{opacity:1} 100%{opacity:0} }
+        .do-flash { animation: flash-anim 150ms var(--ease) forwards; }
+
+        /* ── OVERLAYS ── */
+        .overlay {
+            position: fixed; inset: 0; z-index: 200;
+            background: var(--bg); display: none; flex-direction: column;
+            padding: calc(var(--sat) + 20px) 20px calc(var(--sab) + 24px);
+        }
+        .overlay.active { display: flex; }
+        .overlay-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 24px; flex-shrink: 0;
+        }
+        .overlay-title { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+
+        .icon-btn {
+            background: rgba(255,255,255,0.08); border: none;
+            width: 36px; height: 36px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; cursor: pointer; color: white;
+            transition: transform 0.3s var(--spring), background 0.15s;
+        }
+        .icon-btn:active { transform: scale(0.88); background: rgba(255,255,255,0.15); }
+
+        /* ── GALLERY ── */
+        #gallery-grid {
+            display: grid; grid-template-columns: repeat(3, 1fr);
+            gap: 3px; overflow-y: auto; flex-grow: 1;
+            border-radius: 16px; overflow: hidden;
+        }
+        .gallery-item {
+            aspect-ratio: 1; position: relative;
+            background: rgba(255,255,255,0.05); overflow: hidden;
+            animation: fade-up 0.4s var(--spring) both;
+        }
+        @keyframes fade-up {
+            from { opacity:0; transform: translateY(12px) scale(0.95); }
+            to   { opacity:1; transform: translateY(0) scale(1); }
+        }
+        .gallery-item img { width:100%; height:100%; object-fit:cover; display:block; }
+        .delete-badge {
+            position: absolute; top: 6px; right: 6px;
+            background: var(--danger); color: white;
+            width: 24px; height: 24px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px; font-weight: 700; cursor: pointer;
+            box-shadow: 0 2px 8px rgba(255,59,48,0.5);
+            transition: transform 0.3s var(--spring);
+        }
+        .delete-badge:active { transform: scale(0.85); }
+
+        /* ── SETTINGS ── */
+        .settings-form { display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
+        .notice-card {
+            background: rgba(255,59,48,0.12);
+            border: 1px solid rgba(255,59,48,0.25);
+            border-radius: var(--radius-lg); padding: 14px 16px;
+            font-size: 14px; color: var(--danger); line-height: 1.5; display: none;
+        }
+        .form-group { display: flex; flex-direction: column; gap: 8px; }
+        .form-label {
+            font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px;
+            color: var(--text-secondary); font-weight: 600;
+        }
+        input {
+            background: rgba(255,255,255,0.07);
+            border: 1px solid var(--glass-border);
+            color: white; padding: 14px 16px;
+            border-radius: var(--radius-lg); font-size: 16px; width: 100%;
+            transition: border-color 0.2s, background 0.2s; outline: none;
+        }
+        input:focus {
+            border-color: rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.10);
+        }
+        input::placeholder { color: rgba(255,255,255,0.25); }
+        .btn-primary {
+            background: white; color: black; border: none;
+            padding: 16px; border-radius: var(--radius-lg);
+            font-weight: 700; font-size: 16px; cursor: pointer; width: 100%;
+            letter-spacing: -0.2px;
+            transition: transform 0.3s var(--spring), opacity 0.15s;
+        }
+        .btn-primary:active { transform: scale(0.97); opacity: 0.85; }
+
+        /* ── DIALOG ── */
+        .dialog-overlay {
+            position: fixed; inset: 0; z-index: 300;
+            background: rgba(0,0,0,0.75);
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            display: none; align-items: flex-end; justify-content: center;
+            padding: 0 20px calc(var(--sab) + 20px);
+        }
+        .dialog-overlay.active { display: flex; }
+        .dialog-card {
+            background: rgba(28,28,30,0.95);
+            border: 1px solid var(--glass-border);
+            width: 100%; border-radius: var(--radius-xl);
+            padding: 28px 24px; text-align: center;
+            animation: slide-up 0.45s var(--spring);
+        }
+        @keyframes slide-up {
+            from { transform: translateY(40px); opacity: 0; }
+            to   { transform: translateY(0);    opacity: 1; }
+        }
+        .dialog-card h3 { font-size: 20px; font-weight: 700; margin-bottom: 10px; letter-spacing: -0.4px; }
+        .dialog-card p  { color: var(--text-secondary); line-height: 1.6; font-size: 15px; white-space: pre-line; }
+        .dialog-btns { display: flex; gap: 10px; margin-top: 22px; }
+        .btn-cancel  { flex:1; padding:14px; border-radius:var(--radius-lg); border:none; font-size:16px; cursor:pointer; background:rgba(255,255,255,0.1); color:white; font-weight:600; transition: transform 0.3s var(--spring); }
+        .btn-confirm { flex:1; padding:14px; border-radius:var(--radius-lg); border:none; font-size:16px; cursor:pointer; background:white; color:black; font-weight:700; transition: transform 0.3s var(--spring); }
+        .btn-cancel:active  { transform: scale(0.95); }
+        .btn-confirm:active { transform: scale(0.95); }
+
+        /* ── ERROR ── */
+        #error-card {
+            position: fixed; inset: 0; z-index: 500;
+            background: var(--bg); display: none; flex-direction: column;
+            align-items: center; justify-content: center;
+            padding: 40px; text-align: center; gap: 16px;
+        }
+        #error-card.active { display: flex; }
+        #error-card h2 { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
+        #error-card p  { color: var(--text-secondary); line-height: 1.6; font-size: 15px; }
+    </style>
+</head>
+<body>
+
+<video id="viewfinder" autoplay playsinline muted></video>
+<div id="flash"></div>
+
+<div id="dynamic-island" onclick="openGallery()">
+    <div id="island-content">
+        <span id="island-left">📷</span>
+        <span id="island-right">PicSave</span>
+    </div>
+</div>
+
+<div id="dock">
+    <div id="last-thumb" onclick="openGallery()">📷</div>
+    <button id="shutter" onclick="capturePhoto()">
+        <div id="shutter-inner"></div>
+    </button>
+    <div id="flip-btn" onclick="flipCamera()">🔄</div>
+</div>
+
+<div id="error-card">
+    <div style="font-size:64px;">📷</div>
+    <h2>Camera Access Required</h2>
+    <p>Allow camera access in your browser settings, then tap Retry.</p>
+    <button class="btn-primary" style="max-width:220px" onclick="retryCamera()">🔄 Retry</button>
+</div>
+
+<div id="gallery-overlay" class="overlay">
+    <div class="overlay-header">
+        <div id="gallery-title" class="overlay-title">🖼️ Gallery</div>
+        <div style="display:flex;gap:10px">
+            <button class="icon-btn" onclick="openSendDialog()">📤</button>
+            <button class="icon-btn" onclick="toggleOverlay('settings-overlay',true)">⚙️</button>
+            <button class="icon-btn" onclick="toggleOverlay('gallery-overlay',false)">✕</button>
+        </div>
+    </div>
+    <div id="gallery-grid"></div>
+</div>
+
+<div id="settings-overlay" class="overlay">
+    <div class="overlay-header">
+        <div class="overlay-title">⚙️ Settings</div>
+        <button class="icon-btn" onclick="toggleOverlay('settings-overlay',false)">✕</button>
+    </div>
+    <div class="settings-form">
+        <div id="settings-notice" class="notice-card">
+            ⚠️ Set an album name before capturing.
+        </div>
+        <div class="form-group">
+            <div class="form-label">📁 Album Name</div>
+            <input type="text" id="set-album" placeholder="Wedding June 2026">
+        </div>
+        <div class="form-group">
+            <div class="form-label">📧 Notify Email (optional)</div>
+            <input type="email" id="set-email" placeholder="organizer@email.com" autocomplete="email">
+        </div>
+        <button class="btn-primary" onclick="saveSettings()">✅ Save Settings</button>
+    </div>
+</div>
+
+<div id="send-dialog" class="dialog-overlay">
+    <div class="dialog-card">
+        <h3>📤 Save to Drive</h3>
+        <p id="send-stats"></p>
+        <div class="dialog-btns">
+            <button class="btn-cancel" onclick="toggleOverlay('send-dialog',false)">Cancel</button>
+            <button class="btn-confirm" onclick="processSend()">Save All 💾</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const GAS_URL = "https://script.google.com/macros/s/AKfycbx5eodBgtj_OvMThQX9-Uc0CIk6DPMmHXXjrJQJsfR4Z47NS8rLU-HZN0AVDmJoZpIq/exec";
+const SAFE_BATCH = 18 * 1024 * 1024;
+let db, stream, facingMode = "environment", photoCount = 0;
+
+// ── ISLAND ────────────────────────────────────────────────────────
+function island(state, data = {}) {
+    const el    = document.getElementById('dynamic-island');
+    const left  = document.getElementById('island-left');
+    const right = document.getElementById('island-right');
+    el.className = '';
+    switch (state) {
+        case 'idle':
+            left.textContent  = '📷';
+            right.textContent = data.name || 'PicSave';
+            break;
+        case 'captured':
+            el.classList.add('expanded-wide');
+            left.textContent  = '✨';
+            right.textContent = `${data.count} photo${data.count !== 1 ? 's' : ''}`;
+            setTimeout(() => island('idle', { name: data.name }), 2000);
+            break;
+        case 'sending':
+            el.classList.add('expanded-tall');
+            left.innerHTML    = `<div class="island-dots"><div class="island-dot"></div><div class="island-dot"></div><div class="island-dot"></div></div>`;
+            right.textContent = `Saving ${data.current}/${data.total}`;
+            break;
+        case 'queued':
+            el.classList.add('expanded-wide');
+            left.textContent  = '📨';
+            right.textContent = 'Queued — will save';
+            setTimeout(() => island('idle'), 3000);
+            break;
+        case 'success':
+            el.classList.add('expanded-wide', 'glow-green');
+            left.textContent  = '✅';
+            right.textContent = `Saved ${data.count} photos!`;
+            setTimeout(() => island('idle'), 3000);
+            break;
+        case 'error':
+            el.classList.add('expanded-wide', 'glow-red');
+            left.textContent  = '❌';
+            right.textContent = 'Save failed — retry';
+            setTimeout(() => island('idle'), 4000);
+            break;
+    }
+}
+
+// ── DB ────────────────────────────────────────────────────────────
+async function initDB() {
+    return new Promise((res, rej) => {
+        const r = indexedDB.open("picsave_db", 2);
+        r.onupgradeneeded = e => {
+            const d = e.target.result;
+            if (!d.objectStoreNames.contains("photos")) {
+                const s = d.createObjectStore("photos", { keyPath: "id" });
+                s.createIndex("timestamp", "timestamp");
+            }
+            if (!d.objectStoreNames.contains("send_queue"))
+                d.createObjectStore("send_queue", { keyPath: "id" });
+        };
+        r.onsuccess = e => { db = e.target.result; res(); };
+        r.onerror = rej;
+    });
+}
+
+function dbReq(req) {
+    return new Promise((res, rej) => {
+        req.onsuccess = () => res(req.result);
+        req.onerror   = () => rej(req.error);
+    });
+}
+
+// ── CAMERA ───────────────────────────────────────────────────────
+async function initCamera() {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    const attempts = [
+        { video: { facingMode, width: { ideal: 4096 } } },
+        { video: { facingMode } },
+        { video: true }
+    ];
+    for (const c of attempts) {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia(c);
+            document.getElementById('viewfinder').srcObject = stream;
+            document.getElementById('error-card').classList.remove('active');
+            return;
+        } catch {}
+    }
+    document.getElementById('error-card').classList.add('active');
+}
+
+function retryCamera() { document.getElementById('error-card').classList.remove('active'); initCamera(); }
+function flipCamera()  { facingMode = facingMode === "environment" ? "user" : "environment"; initCamera(); }
+
+// ── CAPTURE ───────────────────────────────────────────────────────
+async function capturePhoto() {
+    const video = document.getElementById('viewfinder');
+    if (!video.videoWidth) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    canvas.toBlob(async blob => {
+        if (!blob) return;
+        const record = { id: crypto.randomUUID(), blob, sizeBytes: blob.size, timestamp: Date.now() };
+        await new Promise((res, rej) => {
+            const req = db.transaction("photos","readwrite").objectStore("photos").add(record);
+            req.onsuccess = res; req.onerror = rej;
+        });
+        const f = document.getElementById('flash');
+        f.classList.remove('do-flash'); void f.offsetWidth; f.classList.add('do-flash');
+        const thumb = document.getElementById('last-thumb');
+        const url = URL.createObjectURL(blob);
+        thumb.style.backgroundImage = `url(${url})`;
+        thumb.textContent = '';
+        thumb.style.transform = 'scale(1.2)';
+        setTimeout(() => { thumb.style.transform = 'scale(1)'; }, 10);
+        photoCount++;
+        const s = JSON.parse(localStorage.getItem('picsave_settings') || '{}');
+        island('captured', { count: photoCount, name: s.album || 'PicSave' });
+    }, 'image/jpeg', 1.0);
+}
+
+// ── GALLERY ───────────────────────────────────────────────────────
+async function openGallery() {
+    const photos = await dbReq(db.transaction("photos","readonly").objectStore("photos").index("timestamp").getAll());
+    const grid = document.getElementById('gallery-grid');
+    grid.innerHTML = '';
+    let total = 0;
+    photos.forEach((p, i) => {
+        total += p.sizeBytes;
+        const div = document.createElement('div');
+        div.className = 'gallery-item';
+        div.style.animationDelay = `${i * 0.04}s`;
+        const img = document.createElement('img');
+        const u = URL.createObjectURL(p.blob);
+        img.src = u; img.onload = () => URL.revokeObjectURL(u);
+        const del = document.createElement('div');
+        del.className = 'delete-badge'; del.textContent = '×';
+        del.onclick = e => { e.stopPropagation(); deletePhoto(p.id); };
+        div.appendChild(img); div.appendChild(del); grid.appendChild(div);
+    });
+    document.getElementById('gallery-title').textContent =
+        `🖼️ ${photos.length} photos · ${(total/1024/1024).toFixed(1)} MB`;
+    toggleOverlay('gallery-overlay', true);
+}
+
+async function deletePhoto(id) {
+    await new Promise((res, rej) => {
+        const req = db.transaction("photos","readwrite").objectStore("photos").delete(id);
+        req.onsuccess = res; req.onerror = rej;
+    });
+    photoCount = Math.max(0, photoCount - 1);
+    openGallery();
+}
+
+// ── BATCHES ───────────────────────────────────────────────────────
+function buildBatches(records) {
+    records.sort((a, b) => a.timestamp - b.timestamp);
+    let batches = [], batch = [], size = 0;
+    for (const r of records) {
+        if ((size + r.sizeBytes) > SAFE_BATCH && batch.length > 0) {
+            batches.push(batch); batch = [r]; size = r.sizeBytes;
+        } else { batch.push(r); size += r.sizeBytes; }
+    }
+    if (batch.length > 0) batches.push(batch);
+    return batches;
+}
+
+// ── SEND DIALOG ───────────────────────────────────────────────────
+async function openSendDialog() {
+    const photos = await dbReq(db.transaction("photos","readonly").objectStore("photos").getAll());
+    if (!photos.length) { alert("No photos to save."); return; }
+    const total = photos.reduce((a,p) => a + p.sizeBytes, 0);
+    const batches = buildBatches(photos);
+    document.getElementById('send-stats').textContent =
+        `${photos.length} photos · ${(total/1024/1024).toFixed(2)} MB\nWill upload in ${batches.length} batch(es) to Drive.`;
+    toggleOverlay('send-dialog', true);
+}
+
+// ── SAVE TO DRIVE ─────────────────────────────────────────────────
+async function processSend() {
+    const s = JSON.parse(localStorage.getItem('picsave_settings') || '{}');
+    if (!s.album) {
+        toggleOverlay('send-dialog', false);
+        toggleOverlay('settings-overlay', true);
+        return;
+    }
+    toggleOverlay('send-dialog', false);
+
+    const photos  = await dbReq(db.transaction("photos","readonly").objectStore("photos").getAll());
+    const batches = buildBatches(photos);
+    island('sending', { current: 0, total: batches.length });
+
+    for (let i = 0; i < batches.length; i++) {
+        island('sending', { current: i + 1, total: batches.length });
+        const images = await Promise.all(batches[i].map(async p => {
+            const b64 = await new Promise(res => {
+                const r = new FileReader();
+                r.onloadend = () => res(r.result.split(',')[1]);
+                r.readAsDataURL(p.blob);
+            });
+            return { filename: `pic_${p.timestamp}.jpg`, data: b64 };
+        }));
+        const payload = JSON.stringify({
+            album:  s.album,
+            notify: s.email || null,
+            images
+        });
+        await new Promise((res, rej) => {
+            const req = db.transaction("send_queue","readwrite").objectStore("send_queue")
+                .add({ id: crypto.randomUUID(), payload });
+            req.onsuccess = res; req.onerror = rej;
+        });
+    }
+
+    await new Promise((res, rej) => {
+        const req = db.transaction("photos","readwrite").objectStore("photos").clear();
+        req.onsuccess = res; req.onerror = rej;
+    });
+    const thumb = document.getElementById('last-thumb');
+    thumb.style.backgroundImage = 'none'; thumb.textContent = '📷';
+    photoCount = 0;
+
+    if ('serviceWorker' in navigator && 'SyncManager' in window) {
+        try {
+            const reg = await navigator.serviceWorker.ready;
+            await reg.sync.register('send-photos');
+            island('queued');
+            return;
+        } catch {}
+    }
+
+    const items = await dbReq(db.transaction("send_queue","readonly").objectStore("send_queue").getAll());
+    for (let i = 0; i < items.length; i++) {
+        island('sending', { current: i + 1, total: items.length });
+        try {
+            await fetch(GAS_URL, { method: 'POST', mode: 'no-cors', body: items[i].payload });
+            await new Promise((res, rej) => {
+                const req = db.transaction("send_queue","readwrite").objectStore("send_queue").delete(items[i].id);
+                req.onsuccess = res; req.onerror = rej;
+            });
+        } catch {
+            island('error'); return;
+        }
+    }
+    island('success', { count: photos.length });
+}
+
+// ── SETTINGS ─────────────────────────────────────────────────────
+function saveSettings() {
+    const s = {
+        album: document.getElementById('set-album').value.trim(),
+        email: document.getElementById('set-email').value.trim()
+    };
+    if (!s.album) { alert("Album name is required."); return; }
+    localStorage.setItem('picsave_settings', JSON.stringify(s));
+    toggleOverlay('settings-overlay', false);
+    island('idle', { name: s.album });
+}
+
+function toggleOverlay(id, show) {
+    document.getElementById(id).classList.toggle('active', show);
+}
+
+// ── INIT ─────────────────────────────────────────────────────────
+window.addEventListener('load', async () => {
+    await initDB();
+    await initCamera();
+    const photos = await dbReq(db.transaction("photos","readonly").objectStore("photos").getAll());
+    photoCount = photos.length;
+    const saved = localStorage.getItem('picsave_settings');
+    if (!saved) {
+        document.getElementById('settings-notice').style.display = 'block';
+        toggleOverlay('settings-overlay', true);
+    } else {
+        const s = JSON.parse(saved);
+        document.getElementById('set-album').value = s.album || '';
+        document.getElementById('set-email').value = s.email || '';
+        island('idle', { name: s.album || 'PicSave' });
+    }
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js');
+        navigator.serviceWorker.addEventListener('message', e => {
+            if (e.data.type === 'SEND_COMPLETE') island('success', { count: 0 });
+            if (e.data.type === 'SEND_ERROR')    island('error');
+        });
+    }
+});
+
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') initCamera();
+});
+</script>
+</body>
+</html>
